@@ -1,0 +1,22 @@
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3-pip python3.11-dev libpq-dev gcc ffmpeg libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+COPY requirements/common.txt requirements/worker-gpu.txt requirements/
+# Install a CUDA-enabled torch build first; TTS/faster-whisper/demucs pull in
+# a CPU-only torch as a transitive dep otherwise, which silently disables GPU use.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir -r requirements/worker-gpu.txt
+
+COPY models/ models/
+COPY worker/ worker/
+
+ENV PYTHONUNBUFFERED=1
+# concurrency=1 is required: STT/Demucs/TTS models are loaded per-process and
+# will exhaust VRAM if more than one heavy task runs at the same time.
+CMD ["celery", "-A", "worker.celery_app", "worker", "-Q", "gpu", "--concurrency=1", "--loglevel=info"]

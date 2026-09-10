@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clipdub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-clipdub}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clipdub}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: sh -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      # Bound to localhost: the API has no auth of its own. Reach it either
+      # from this host directly, or from outside via Cloudflare Tunnel/Access
+      # (docs/cloudflare-tunnel.md) - never expose it on a public interface as-is.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker-cpu
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./storage:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker-gpu
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./storage:/storage
+      - ./voice_models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    # Requires the NVIDIA Container Toolkit on the host. Comment this block
+    # out (and set WHISPER_DEVICE=cpu / TTS_ENGINE accordingly) to run on a
+    # machine without a GPU, e.g. for smoke-testing the pipeline wiring.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: http://api:8000
+    ports:
+      # Bound to localhost by default; expose it to the internet only through
+      # Cloudflare Tunnel + Access (docs/cloudflare-tunnel.md), which reaches
+      # this container by its service name over the Compose network, not
+      # through this host-published port.
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      - api
+
+  # Cloudflare Tunnel: exposes the dashboard (and optionally the API) to the
+  # internet through Cloudflare's edge without opening any inbound port on
+  # this host. Routing (which hostname maps to which local service) and
+  # authentication (Cloudflare Access policy - who is allowed to log in) are
+  # both configured in the Zero Trust dashboard, not here. See
+  # docs/cloudflare-tunnel.md for the one-time setup. Leave
+  # CLOUDFLARE_TUNNEL_TOKEN unset in .env to skip this service entirely.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - dashboard
+      - api
+    profiles:
+      - cloudflare
+
+volumes:
+  postgres_data:
