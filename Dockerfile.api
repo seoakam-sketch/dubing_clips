@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/common.txt requirements/api.txt requirements/
+RUN pip install --no-cache-dir -r requirements/api.txt
+
+COPY api/ api/
+COPY models/ models/
+COPY worker/__init__.py worker/celery_app.py worker/config.py worker/job_utils.py worker/
+COPY alembic.ini .
+COPY alembic/ alembic/
+
+ENV PYTHONUNBUFFERED=1
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

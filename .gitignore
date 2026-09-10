@@ -141,3 +141,25 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Project storage (large media files, never commit)
+storage/*
+!storage/.gitkeep
+!storage/**/.gitkeep
+
+# TTS POC outputs
+scripts/tts_poc_output/
+
+# Downloaded Piper/XTTS voice models (large binaries, host-provided)
+voice_models/*
+!voice_models/.gitkeep
