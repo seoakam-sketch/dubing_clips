@@ -5,6 +5,7 @@ from pathlib import Path
 from models.clip import Clip
 from models.db import SessionLocal
 from worker.celery_app import app
+from worker.cleanup import remove_paths
 from worker.config import clip_dir
 from worker.job_utils import job_run
 
@@ -45,7 +46,7 @@ def separate_audio(self, clip_id: str) -> str:
             stem_dir = demucs_out / "htdemucs" / Path(raw_audio).stem
             shutil.copy(stem_dir / "vocals.wav", work_dir / VOCALS_FILENAME)
             shutil.copy(stem_dir / "no_vocals.wav", work_dir / BACKGROUND_FILENAME)
-            shutil.rmtree(demucs_out, ignore_errors=True)
+            remove_paths(demucs_out, raw_audio)
 
         return clip_id
     finally:

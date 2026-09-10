@@ -5,6 +5,7 @@ from models.clip import Clip
 from models.db import SessionLocal
 from models.enums import ClipStatus
 from worker.celery_app import app
+from worker.cleanup import remove_paths
 from worker.config import clip_dir
 from worker.job_utils import job_run
 
@@ -117,9 +118,11 @@ def reframe_vertical(self, clip_id: str) -> str:
                     check=True,
                     capture_output=True,
                 )
+                old_cut_path = clip.cropped_path
                 clip.cropped_path = out_path
                 clip.status = ClipStatus.reframing.value
                 session.commit()
+                remove_paths(old_cut_path)
         except Exception as exc:  # noqa: BLE001
             clip.status = ClipStatus.failed.value
             clip.error = str(exc)

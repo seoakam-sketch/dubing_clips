@@ -7,6 +7,7 @@ from models.db import SessionLocal
 from models.enums import ClipStatus
 from models.transcript import TranscriptSegment
 from worker.celery_app import app
+from worker.cleanup import remove_paths
 from worker.config import PIPER_FA_VOICE_PATH, TTS_ENGINE, clip_dir
 from worker.job_utils import job_run
 from worker.tts_engines import get_engine
@@ -101,6 +102,7 @@ def synthesize_dub(self, clip_id: str) -> str:
                 clip.dubbed_path = dubbed_track
                 clip.status = ClipStatus.dubbing.value
                 session.commit()
+                remove_paths(pieces_dir)
         except Exception as exc:  # noqa: BLE001
             clip.status = ClipStatus.failed.value
             clip.error = str(exc)
